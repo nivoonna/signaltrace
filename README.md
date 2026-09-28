@@ -1,16 +1,45 @@
 # SignalTrace
 
-SignalTrace is an end-to-end technical product exercise in SDK integration, APIs, AI-assisted debugging, and validation. It models a mobile team whose analytics SDK is integrated into an iOS app, but whose expected events never reach the product.
+**SignalTrace shows what happens between a user tapping a button in a mobile app and that action appearing as analytics data, and what happens when something in that chain breaks.**
 
-The central question is **which layer failed, what evidence proves it, and how do we verify the fix?** The planned experience follows that question from a fictional commerce app through SDK state, HTTP delivery, backend ingestion, and an AI Integration Copilot with visible tool calls.
+Analytics data records how people use an app, such as which products they view or add to their cart. The planned experience lets you explore that journey through Nova, a fictional shopping app represented by a browser simulation.
 
-**Current status: documentation and architecture only.** This repository contains the five documents listed below. No application, SDK, API, agent, automated tests, evaluation results, CI workflow, or live deployment has been implemented.
+**Current status: documentation only.** Both experiences below are planned; there is no runnable app or Integration Copilot yet.
+
+## Happy Flow — See how it works
+
+Start with everything working. Tap “Add to cart” and follow an **event**, a record of that action, through the system:
+
+**Mobile app → SDK → API → backend → analytics dashboard**
+
+1. **Mobile app:** Nova is the shopping interface where you view a product and tap “Add to cart.”
+2. **SDK (software development kit):** The analytics code added to the app records your action as an event and sends it onward.
+3. **API (application programming interface):** A defined entry point receives the event sent by the SDK.
+4. **Backend:** The software running on a server checks the event and stores it.
+5. **Analytics dashboard:** A screen displays the recorded action so you can see that it arrived.
+
+## Diagnostic Flow — Find what broke
+
+Explore the same system with one layer intentionally broken. The shopping app keeps working, so you can still view products and add them to your cart, but those actions are missing from the analytics dashboard.
+
+Inspect the evidence yourself or ask the **Integration Copilot**, an AI assistant that uses tools to read what the system reports. The investigation can examine:
+
+- **SDK state:** Whether the analytics code has been started and is ready to record actions.
+- **Logs:** Records of what the system did and any errors it encountered.
+- **API behavior:** Whether the SDK sent a request and what response it received.
+- **Event delivery:** Whether each recorded action reached the backend and appeared on the dashboard.
+
+The first planned failure is an SDK that was never started, or **initialized**. After finding the root cause, you apply the fix and repeat the actions. You then **validate** the fix by checking that fresh events reach the dashboard; the earlier failed attempts remain visible.
+
+## Why this exercise exists
+
+The goal is to show how I approach a technical product problem end to end: understanding the user workflow, designing the system, working across SDKs and APIs, using AI for diagnosis, and validating that the solution actually works.
 
 ## Product hypothesis
 
-When an SDK integration fails, developers often spend more time identifying the responsible layer than applying the eventual fix. An agent that inspects configuration, runtime logs, API behavior, and event state through explicit diagnostic tools may reduce the search space and shorten time to root cause.
+When analytics data is missing, finding where the chain broke can take longer than fixing it. An AI assistant that examines the system's evidence may help people find the cause faster.
 
-This is a hypothesis to validate, not a measured outcome. The exercise connects product framing, implementation, debugging, tests, agent evaluations, and a GitHub development workflow into one inspectable product story.
+That is a hypothesis to test, not a measured result. SignalTrace will compare investigation with and without the Copilot, then check whether the proposed fix actually restores event delivery.
 
 ## What exists and what is planned
 
@@ -126,13 +155,11 @@ evals/                       Agent cases, rubrics, runner, and labeled reports
 .github/workflows/           CI workflows
 ```
 
-## Review paths
+## Explore further
 
-| Reader | Start here |
-| --- | --- |
-| Recruiter | Opening summary, current status, and first incident above |
-| Hiring manager | [Product brief](docs/product-brief.md): problem, hypothesis, scope, metrics |
-| Technical PM / engineer | [Architecture](docs/architecture.md) and [product decisions](docs/product-decisions.md) |
-| Engineer | [Build plan](docs/build-plan.md): milestones, tests, evaluations, GitHub workflow |
+- [Product brief](docs/product-brief.md): the problem, planned experience, and how success will be measured.
+- [Architecture](docs/architecture.md): how the parts connect, exchange data, and verify delivery.
+- [Product decisions](docs/product-decisions.md): the choices behind the design and their tradeoffs.
+- [Build plan](docs/build-plan.md): milestones, tests, and evaluation of the Copilot's diagnoses.
 
 There are no setup commands yet because there is no runnable application. The next proposed milestone is the deterministic incident engine and ingestion contract. Implementation starts in a subsequent task after this documentation review.

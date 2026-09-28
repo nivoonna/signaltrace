@@ -16,16 +16,35 @@ When an SDK integration fails, developers often spend more time identifying whic
 
 The hypothesis requires comparison with a useful manual workflow. An agent that repeats a scenario title or supplies a plausible explanation without inspecting evidence has not demonstrated diagnostic value.
 
-## Purpose and audience
+## Purpose
 
-This technical product exercise will demonstrate an end-to-end connection between product decisions, a simple iOS app, a fictional SDK, API ingestion, runtime debugging, an analytics dashboard, an AI agent, deterministic tests, agent evaluations, and a GitHub-based delivery process with Codex-assisted implementation.
+**SignalTrace shows what happens between a user tapping a button in a mobile app and that action appearing as analytics data, and what happens when something in that chain breaks.**
 
-| Audience | Question the project should answer | Intended evidence |
-| --- | --- | --- |
-| Recruiter | What does this do, and why does it matter? | Purpose, missing-event problem, and incident story understandable in under 60 seconds |
-| Hiring manager | Was the problem framed and validated thoughtfully? | Hypothesis, scope, metrics, alternatives, and explicit limitations |
-| Technical PM / engineer | How does diagnosis connect to system behavior? | Architecture, API outcomes, SDK state, tool traces, and evaluation cases |
-| Engineer | Can I inspect and reproduce the claims? | Future source, tests, PRs, CI artifacts, native reference, and reproducible runs |
+Analytics data records how people use an app, such as viewing a product or adding it to a cart. The planned browser simulation of Nova, a fictional shopping app, will offer two separate experiences. Neither is implemented yet.
+
+### Happy Flow — See how it works
+
+Start with a healthy system. Tap “Add to cart” and follow an **event**, a record of that action, along this path:
+
+**Mobile app → SDK → API → backend → analytics dashboard**
+
+1. **Mobile app:** Nova is the shopping interface where you view a product and tap “Add to cart.”
+2. **SDK (software development kit):** The analytics code added to the app records your action as an event and sends it onward.
+3. **API (application programming interface):** A defined entry point receives the event sent by the SDK.
+4. **Backend:** The software running on a server checks the event and stores it.
+5. **Analytics dashboard:** A screen displays the recorded action so you can see that it arrived.
+
+### Diagnostic Flow — Find what broke
+
+Use the same system with one layer intentionally broken. Shopping still works, but the actions are missing from the analytics dashboard.
+
+You can inspect the evidence yourself or ask the **Integration Copilot**, an AI assistant that uses tools to read what the system reports. Check the **SDK state** to see whether the analytics code is ready, read **logs** that record system activity and errors, inspect **API behavior** through requests and responses, and trace **event delivery** to see where an action stopped.
+
+The first planned failure is an SDK that was never started, or **initialized**. Once you find the root cause, apply the fix and repeat the actions. **Validation** means checking that those fresh events successfully reach the dashboard; applying a fix alone does not prove it worked.
+
+### Why this exercise exists
+
+The goal is to show how I approach a technical product problem end to end: understanding the user workflow, designing the system, working across SDKs and APIs, using AI for diagnosis, and validating that the solution actually works.
 
 ## Planned live experience
 
