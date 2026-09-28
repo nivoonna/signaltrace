@@ -7,10 +7,10 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException, status
+from fastapi import FastAPI, HTTPException, Response, status
 
-from .database import initialize_database, insert_event
-from .models import AnalyticsEvent, EventReceipt
+from .database import initialize_database, insert_event, read_session_events
+from .models import AnalyticsEvent, EventReceipt, Identifier
 
 
 logger = logging.getLogger(__name__)
@@ -67,6 +67,22 @@ def create_app(database_path: str | Path | None = None) -> FastAPI:
                 },
             )
         return EventReceipt(event_id=event.event_id)
+
+    @app.get(
+        "/sessions/{session_id}/events",
+        response_model=list[AnalyticsEvent],
+        responses={503: {"description": "Event storage is unavailable."}},
+    )
+    def session_events(session_id: Identifier, response: Response) -> list[dict[str, str]]:
+        response.headers["Cache-Control"] = "no-store"
+        try:
+            return read_session_events(path, session_id)
+        except sqlite3.OperationalError as exc:
+            logger.exception("Event retrieval failed")
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail={"code": "storage_unavailable", "message": "Event storage is unavailable."},
+            ) from exc
 
     return app
 

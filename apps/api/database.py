@@ -44,3 +44,17 @@ def insert_event(database_path: Path, event: AnalyticsEvent) -> bool:
             )
             inserted = cursor.rowcount == 1
     return inserted
+
+
+def read_session_events(database_path: Path, session_id: str) -> list[dict[str, str]]:
+    """Read committed events for one session in insertion order."""
+    with closing(sqlite3.connect(database_path)) as connection:
+        connection.row_factory = sqlite3.Row
+        rows = connection.execute(
+            """
+            SELECT event_id, event, session_id, timestamp, product_id
+            FROM events WHERE session_id = ? ORDER BY rowid
+            """,
+            (session_id,),
+        )
+        return [dict(row) for row in rows]

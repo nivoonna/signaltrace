@@ -191,6 +191,51 @@ def test_concurrent_duplicates_store_exactly_one_event(client, database_path, ev
         assert sorted(response.result(timeout=10) for response in responses) == [201, 409]
     assert stored_events(database_path) == [{**event, "timestamp": "2026-09-28T12:34:56+00:00"}]
 
+
+def test_session_read_is_empty_until_events_are_stored(client, event):
+    assert client.get("/sessions/session-001/events").json() == []
+    # Reverse lexical IDs and timestamps: retrieval follows insertion order.
+    first = {**event, "event_id": "z-first"}
+    second = {
+        **event, "event_id": "a-second", "event": "product_added_to_cart",
+        "timestamp": "2026-09-27T12:34:56Z",
+    }
+    unrelated = {**event, "event_id": "other", "session_id": "Session-001"}
+    for payload in (first, unrelated, second):
+        assert client.post("/events", json=payload).status_code == 201
+
+    response = client.get("/sessions/session-001/events")
+
+    assert response.status_code == 200
+    assert response.headers["Cache-Control"] == "no-store"
+    assert response.json() == [first, second]
+    assert client.get("/sessions/unknown/events").json() == []
+
+
+@pytest.mark.parametrize("session_id", ["has space", "x" * 129])
+def test_session_read_validates_identifier(client, session_id):
+    response = client.get(f"/sessions/{session_id}/events")
+    assert response.status_code == 422
+    assert response.json()["detail"][0]["loc"] == ["path", "session_id"]
+
+
+def test_session_read_storage_failure_is_not_empty_success(client, database_path):
+    database_path.unlink()
+    database_path.mkdir()
+    response = client.get("/sessions/session-001/events")
+    assert response.status_code == 503
+    assert response.json() == {
+        "detail": {"code": "storage_unavailable", "message": "Event storage is unavailable."}
+    }
+
+
+def test_session_read_after_restart(database_path, event):
+    with TestClient(create_app(database_path)) as client:
+        assert client.post("/events", json=event).status_code == 201
+    # A fresh application must read the existing SQLite file, not process memory.
+    with TestClient(create_app(database_path)) as client:
+        assert client.get("/sessions/session-001/events").json() == [event]
+
     # A conflict must not poison the next write or prevent another event in this session.
     # IDs differing only by case are distinct under the public contract.
     second = {**event, "event_id": "EVT-001", "event": "product_added_to_cart"}
@@ -228,6 +273,10 @@ def test_real_http_acceptance_and_duplicate(live_url, database_path, event):
         assert response.status == 201
         assert response.headers.get_content_type() == "application/json"
         assert json.load(response) == {"event_id": event["event_id"], "status": "accepted"}
+
+    with http.open(f"{live_url}/sessions/{event['session_id']}/events", timeout=5) as response:
+        assert response.status == 200
+        assert json.load(response) == [event]
 
     with pytest.raises(HTTPError) as duplicate:
         http.open(request, timeout=5)
