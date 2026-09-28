@@ -1,19 +1,25 @@
 # SignalTrace build plan
 
-Status: the first functional increment implements `POST /events`, event validation, SQLite persistence, and deterministic tests. It is ready for review before a commit. The rest of the system, agent evaluations, CI, and deployment remain planned.
+Status: ingestion is committed. The next visible MVP adds session retrieval, Nova shopping, Nova Analytics, healthy/issue modes, implementation health, and technical evidence. The broader diagnostic system, agent evaluations, CI, and deployment remain planned.
 
 ## Delivery sequence
 
 | Milestone | Outcome | Status |
 | --- | --- | --- |
 | M0 | Product framing and architecture | Documents present |
-| M1 | Deterministic incident engine, evidence, and HTTP ingestion | In progress: ingestion only is implemented |
-| M2 | Browser failure-to-recovery experience and validation | Planned |
+| M1 | Deterministic incident engine, evidence, and HTTP ingestion | In progress: ingestion/retrieval implemented; browser models the first incident |
+| M2 | Browser failure-to-recovery experience and validation | In progress: shopping/dashboard and two modes implemented; same-session fix/validation deferred |
 | M3 | Live Integration Copilot with visible tools and agent evaluations | Planned |
 | M4 | Native SwiftUI app, Swift SDK, and parity evidence | Planned |
 | M5 | Hosted experience, Under the Hood evidence, and product assessment | Planned |
 
 Complete each milestone's acceptance criteria before claiming its functionality in the README. The first complete vertical slice spans M1–M3. The native reference remains a required project deliverable beyond that browser slice.
+
+### Bounded visible MVP increment
+
+The browser MVP uses the existing POST contract unchanged, adds only a session read endpoint to FastAPI, and models initialization in the browser. Its two modes compare working delivery with missing initialization while preserving shopping behavior. Dashboard health comes from actual stored events; HTTP codes and simulation details live in collapsed evidence. See D13 for the scope adjustment from the future backend incident engine.
+
+Checks: retain all ingestion tests, add retrieval tests, test browser health/state decisions with fixed inputs, build/type-check Next.js, and verify both flows against the running API and SQLite. A mode switch starts a new session and is not remediation of the original incident. This increment does not complete M1 or M2, and introduces no AI, native code, CI, or deployment.
 
 ## M0 — Documentation and architecture
 

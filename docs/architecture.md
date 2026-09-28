@@ -1,10 +1,10 @@
 # SignalTrace architecture
 
-Status: `POST /events`, its event contract, SQLite storage, and deterministic ingestion tests are implemented. The broader system described below remains a target architecture. Scope and user intent are defined in the [product brief](product-brief.md); delivery gates are in the [build plan](build-plan.md).
+Status: ingestion, session retrieval, and the first visible browser MVP are implemented. The broader diagnostic system described below remains a target architecture. Scope and user intent are defined in the [product brief](product-brief.md); delivery gates are in the [build plan](build-plan.md).
 
 ## Implemented increment: event ingestion
 
-The implemented path is HTTP client → FastAPI request validation → SQLite. `apps/api/models.py` defines the contract; `database.py` creates the table and commits inserts; `main.py` exposes `POST /events`. There is no SDK simulation, session controller, dashboard, or agent in this increment.
+The ingestion path is HTTP client → FastAPI request validation → SQLite. `apps/api/models.py` defines the contract; `database.py` creates the table and commits inserts; `main.py` exposes `POST /events`. The visible MVP below adds retrieval and a browser simulation without changing this ingestion contract.
 
 Each event contains required `event_id`, `event`, `session_id`, `timestamp`, and `product_id` fields. The supported event names are `product_viewed` and `product_added_to_cart`. IDs are case-sensitive strings of 1–128 non-whitespace characters. Timestamps require a timezone and are normalized to UTC. Extra fields are rejected. See the [README event contract](../README.md#event-contract) for the exact timestamp format and runnable examples.
 
@@ -12,7 +12,17 @@ SQLite enforces global uniqueness of `event_id`. Accepted inserts return `201` o
 
 Each insertion uses a short-lived connection, a parameterized statement, and a transaction. Database setup runs at application startup. `SIGNALTRACE_DB_PATH` selects the file, defaulting to `data/signaltrace.sqlite3` relative to the working directory. Tests use isolated files and independently read stored rows; the database and transport behavior are not mocked.
 
-Authentication, session ownership, read endpoints, richer event metadata, migrations, and deployment are deferred. `session_id` is currently metadata supplied by the caller, not an authorization boundary. Run the API locally until those controls are implemented. The following sections retain the deeper design for subsequent increments.
+Authentication, session ownership, richer event metadata, migrations, and deployment are deferred. `session_id` is currently metadata supplied by the caller, not an authorization boundary. Run the API locally until those controls are implemented.
+
+## Implemented increment: visible browser MVP
+
+`apps/web` uses Next.js/React. Nova's cart, analytics initialization, expected events, and HTTP attempt evidence are browser-owned simulations. A healthy product view or cart action posts the unchanged five-field payload through Next.js's same-origin proxy to the real FastAPI `POST /events`. Missing initialization records an expectation but sends no ingestion request. This browser-owned state is an explicit bounded exception to the future backend-owned simulation described below; see D13.
+
+`GET /sessions/{session_id}/events` reads committed SQLite rows with a parameterized, case-sensitive session filter, ordered by insertion (`rowid`). It returns an array of contract events, including an empty array for an unknown session, and disables caching. Identifier rules match ingestion; operational read failures return `503`. This is filtering, not session authorization. No schema migration or write behavior change is required.
+
+Nova Analytics reads after each action and polls three seconds after each background read completes. Health requires both behavior types and every expected event to match stored ID, session, name, product, and timestamp. HTTP acceptance alone cannot produce healthy status. Unavailable reads display unconfirmed delivery and label any prior activity stale. Request timeouts are eight seconds. New modes/reloads create independent UUID sessions; disposed sessions cannot update the active view, and older reads cannot overwrite newer evidence.
+
+Only accepted events are durable. Browser expectations, cart state, and attempt evidence disappear on reload; no session recovery or replay is claimed. There is no ingestion retry, checkout, AI diagnosis, remediation command, or native SDK. The API remains local and unauthenticated; unbounded reads are a small-demo shortcut pending pagination, retention, and ownership controls. The following sections preserve the deeper target design for later increments.
 
 ## System boundaries
 

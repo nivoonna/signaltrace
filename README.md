@@ -2,9 +2,11 @@
 
 **SignalTrace shows what happens between a user tapping a button in a mobile app and that action appearing as analytics data, and what happens when something in that chain breaks.**
 
-Analytics data records how people use an app, such as which products they view or add to their cart. The planned experience lets you explore that journey through Nova, a fictional shopping app represented by a browser simulation.
+Analytics data records how people use an app, such as which products they view or add to their cart. Explore that journey through Nova, a fictional shopping app represented by a browser simulation. Nova's Product team wants reliable data to understand its customers' shopping journey.
 
-**Current status: the event ingestion API is implemented.** You can send an event over HTTP, have it checked and stored in SQLite, and verify the behavior with automated tests. The two full experiences below remain planned; there is no shopping interface, dashboard, or Integration Copilot yet.
+**Current status: the first visible MVP works locally.** Shop in Nova and watch actual stored events appear in Nova Analytics. Switch between **Healthy Implementation** and **Implementation Issue** to see how a working shopping app can still leave its Product team without the data it needs. Technical evidence is available in a collapsed section. AI diagnosis, applying a fix within an incident, and native iOS remain planned.
+
+The exercise demonstrates a simple product problem: a technical capability creates value only when it is implemented correctly and the customer can trust that it works.
 
 ## Happy Flow — See how it works
 
@@ -22,14 +24,14 @@ Start with everything working. Tap “Add to cart” and follow an **event**, a 
 
 Explore the same system with one layer intentionally broken. The shopping app keeps working, so you can still view products and add them to your cart, but those actions are missing from the analytics dashboard.
 
-Inspect the evidence yourself or ask the **Integration Copilot**, an AI assistant that uses tools to read what the system reports. The investigation can examine:
+The MVP lets you inspect delivery evidence yourself. In the planned full Diagnostic Flow, you will also be able to ask the **Integration Copilot**, an AI assistant that uses tools to read what the system reports. The investigation will examine:
 
 - **SDK state:** Whether the analytics code has been started and is ready to record actions.
 - **Logs:** Records of what the system did and any errors it encountered.
 - **API behavior:** Whether the SDK sent a request and what response it received.
 - **Event delivery:** Whether each recorded action reached the backend and appeared on the dashboard.
 
-The first planned failure is an SDK that was never started, or **initialized**. After finding the root cause, you apply the fix and repeat the actions. You then **validate** the fix by checking that fresh events reach the dashboard; the earlier failed attempts remain visible.
+The MVP's first failure is analytics code that was never started, or **initialized**. The app still works, but no analytics delivery request is made. Switching modes starts a fresh session; it is not a fix or a recovery validation for the old session. Applying a fix and validating fresh events while preserving the original incident is planned for a later increment.
 
 ## Why this exercise exists
 
@@ -48,17 +50,42 @@ The labels describe different dimensions: **implemented** means present and veri
 | Component | Status today | Intended behavior |
 | --- | --- | --- |
 | Product brief, architecture, decisions, build plan | Present; ready for review | Documentation of the proposed product |
-| Nova commerce experience | Planned; intended simulation | Browser representation of a simple iOS shopping app |
-| Browser-path SDK model | Planned; intended simulation | Backend-owned SDK state with reproducible incident behavior |
+| Nova commerce experience | Implemented simulation | Browser shopping app with one product and a working cart |
+| Browser analytics model | Implemented simulation | Browser-owned initialization state and expected events; healthy and uninitialized modes |
 | Event ingestion API and stored events | Implemented | `POST /events` validates and persists events in SQLite |
 | Automated ingestion tests | Implemented | Accepted events, invalid input, duplicate protection, and persistence after restart |
-| Runtime evidence logs and dashboard | Planned | Inspect SDK behavior and observed delivery status |
+| Session retrieval and Nova Analytics | Implemented | `GET /sessions/{session_id}/events` reads SQLite; dashboard compares expected and received events |
+| Technical evidence | Implemented | Browser tracking attempts, actual HTTP results, and stored status; durable diagnostic logs remain planned |
 | Integration Copilot | Planned | Live server-side OpenAI calls and explicit diagnostic functions |
 | Provider responses in deterministic tests | Planned; intended mocks | Clearly labeled fixed responses; never presented as live AI |
 | SwiftUI app and `NovaAnalyticsSDK` | Planned | Native reference app and original Swift package |
 | Broader tests, agent evaluations, GitHub Actions, hosted demo | Planned | Full-flow verification and delivery evidence; no agent evaluation results yet |
 
 Nova is fictional. Product names, scenarios, data, assets, and implementation will be original. No employer code, internal documentation, screenshots, architecture, or data are used. Any simulated business metrics must be labeled **demo data**.
+
+## Run the visible MVP
+
+Start the API using the instructions below. In a second terminal, with Node.js 24+ and pnpm 11.19.0 installed:
+
+```powershell
+cd apps/web
+pnpm install --frozen-lockfile
+pnpm dev
+```
+
+If needed, install the pinned package manager with `npm install --global pnpm@11.19.0` first. Open [SignalTrace at localhost:3000](http://127.0.0.1:3000).
+
+1. In **Healthy Implementation**, opening the product creates one view event. Press **Add to cart**: the dashboard should show **Expected: 2**, **Received: 2**, and **Implementation healthy**.
+2. Switch to **Implementation Issue** and add the mug. The cart still updates, but the dashboard shows **Expected: 2**, **Received: 0**, and **Implementation issue**.
+3. Expand **View technical evidence**. Healthy events show actual response codes and stored records. Issue events show **Not initialized**, **Delivery attempted: No**, and **API request: None**.
+
+Each mode switch, reload, or **Start fresh** creates a new session. More cart clicks create more expected events. The dashboard reads stored events after each action and polls three seconds after each completed background read. Backend failures show delivery as **unconfirmed**, not as a successful or empty read.
+
+The web server forwards `/api/events` to FastAPI's `/events` and `/api/sessions/{session_id}/events` to the matching read endpoint. Set `SIGNALTRACE_API_URL` before starting/building Next.js to change its default `http://127.0.0.1:8000` destination. No CORS configuration or browser secrets are required. To run the optimized build, use `pnpm build` then `pnpm start` instead of `pnpm dev`.
+
+**Real:** HTTP ingestion, validation, duplicate protection, SQLite persistence, session retrieval, and dashboard results. **Simulated:** Nova, its product/cart, browser analytics initialization, and the intentional missing-initialization incident. The mug illustration is original SVG artwork. Cart contents and tracking evidence live only in browser memory; accepted events survive restarts in SQLite. There is no checkout, production SDK, AI, or recovery workflow.
+
+This MVP is local only: session IDs filter data but do not authorize access. Authentication, retention/cleanup, pagination, deployment, and durable tracking-attempt storage are deferred.
 
 ## Run the event ingestion API
 
@@ -118,15 +145,43 @@ The first submission returns `201 Created` with:
 | Duplicate `event_id`, even with a different session or payload | `409 Conflict` with `detail.code=duplicate_event_id` | Original record unchanged |
 | SQLite operational failure | `503 Service Unavailable` with `detail.code=storage_unavailable` | No acceptance reported |
 
-Repeating the example produces a duplicate response. Use a new `event_id` for a new action. There is no event-reading HTTP endpoint yet; automated tests inspect the database through an independent SQLite connection.
+Repeating the example produces a duplicate response. Use a new `event_id` for a new action. The existing ingestion contract is unchanged by the visible MVP.
+
+### Read a session's events
+
+`GET /sessions/{session_id}/events` returns `200` with an array of the session's committed events in insertion order, including all five contract fields. An unknown session returns `[]`. Invalid session identifiers return `422`; unavailable storage returns `503` with `detail.code=storage_unavailable`. Responses use `Cache-Control: no-store`. Session filtering is case-sensitive and parameterized; it is not authentication.
+
+```powershell
+Invoke-RestMethod 'http://127.0.0.1:8000/sessions/session-001/events'
+```
 
 ### Run the tests
 
 ```powershell
-.\.venv\Scripts\python.exe -m pytest -q
+.\.venv\Scripts\python.exe -m pytest -q -W error
 ```
 
-The tests use fixed inputs and separate temporary SQLite files, leaving the local demo database untouched. They cover both supported events, identifier and timestamp boundaries, malformed/unsupported input, duplicate protection including concurrent requests, persistence after reopening the app, database configuration, and storage failure. Most requests exercise FastAPI in-process; one live Uvicorn test verifies acceptance and duplicate responses over real HTTP on an ephemeral localhost port, then stops the server.
+The 33 backend cases use fixed inputs and separate temporary SQLite files, leaving the local demo database untouched. They retain all 28 ingestion cases and add session filtering/order, empty results, identifier validation, read failure, and retrieval after restart. A live Uvicorn test verifies ingestion, retrieval, and duplicates over actual HTTP.
+
+From `apps/web`:
+
+```powershell
+pnpm test
+pnpm typecheck
+pnpm build
+```
+
+The 16 browser-state cases use fixed IDs/clocks and explicitly mocked transport. They verify both modes, exact event payloads, storage-backed health, mismatched records, errors/recovery, repeated actions, and stale responses. They do not substitute for running the two applications together.
+
+With both applications running, six Playwright browser tests check actual delivery/retrieval, no delivery in issue mode, session resets, an explicitly mocked read outage and recovery, a narrow screen, and keyboard controls. They add new UUID sessions to the local demo database without changing existing records. Screenshots and session evidence are written to ignored `apps/web/test-results/` files.
+
+```powershell
+# Use an installed Chrome browser (PowerShell):
+$env:PLAYWRIGHT_CHANNEL = 'chrome'
+pnpm test:e2e
+```
+
+Alternatively, run `pnpm exec playwright install chromium` and leave `PLAYWRIGHT_CHANNEL` unset. `PLAYWRIGHT_BASE_URL` defaults to `http://127.0.0.1:3000`.
 
 ## First incident: SDK not initialized
 
@@ -149,6 +204,8 @@ Before initialization, **no ingestion request occurs**. The dashboard must disti
 
 ## High-level architecture — planned
 
+The diagram describes the future diagnostic system. In the current MVP, the browser owns the analytics simulation and posts directly through the web proxy to ingestion. The backend controller, Copilot, and validation runner below are not implemented; [D13](docs/product-decisions.md#d13--deliver-the-visible-mvp-with-a-browser-analytics-model) records this scope choice.
+
 ```mermaid
 flowchart LR
     Web["Next.js: Nova simulation, dashboard, Under the Hood"] --> Demo["FastAPI: demo controller and simulated SDK"]
@@ -168,11 +225,11 @@ The browser does not run Swift. Its modeled SDK behavior and the native package 
 
 ## Incident coverage
 
-**No incident is runnable today.** The supported set will expand only when each scenario has evidence, remediation, and validation.
+**Missing initialization is runnable in the browser MVP.** It demonstrates missing delivery and inspectable evidence. Remediation within the same session, recovery validation, and additional incidents remain planned.
 
 | Incident | Intended failing layer | Scope |
 | --- | --- | --- |
-| SDK not initialized | SDK lifecycle | First planned vertical slice |
+| SDK not initialized | SDK lifecycle | Browser simulation implemented; same-session remediation and validation planned |
 | Missing tracking call | Application instrumentation | Backlog candidate |
 | Invalid ingestion credential | Authentication | Backlog candidate |
 | Consent prevents collection | Privacy configuration | Backlog candidate; respect consent, do not bypass it |
@@ -222,10 +279,9 @@ signaltrace/
     `-- build-plan.md
 ```
 
-Proposed implementation directories — none exists yet:
+The web app now lives in `apps/web/` (Next.js/React, browser analytics model, and state tests). Remaining proposed directories:
 
 ```text
-apps/web/                    Next.js interface
 apps/ios/                    Nova SwiftUI reference app
 packages/NovaAnalyticsSDK/    Original Swift package and package tests
 contracts/                   Versioned event and diagnostic schemas; shared fixtures
@@ -240,4 +296,4 @@ evals/                       Agent cases, rubrics, runner, and labeled reports
 - [Product decisions](docs/product-decisions.md): the choices behind the design and their tradeoffs.
 - [Build plan](docs/build-plan.md): milestones, tests, and evaluation of the Copilot's diagnoses.
 
-The current increment stops at ingestion. The remaining Happy Flow and Diagnostic Flow will be built through separate, reviewable increments; this change does not complete either experience.
+The visible MVP demonstrates healthy delivery and missing analytics through the same shopping interface. The full Diagnostic Flow, Integration Copilot, native app, and deployment remain separate, reviewable increments.
