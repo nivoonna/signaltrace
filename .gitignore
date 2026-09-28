@@ -10,3 +10,9 @@ data/
 .env
 .env.*
 !.env.example
+node_modules/
+.pnpm-store/
+.next/
+*.tsbuildinfo
+test-results/
+playwright-report/
