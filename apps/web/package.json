@@ -10,10 +10,13 @@
   "scripts": {
     "dev": "next dev --hostname 127.0.0.1",
     "build": "next build",
+    "build:static": "node scripts/build-static.mjs",
+    "preview:static": "node scripts/serve-static.mjs",
     "start": "next start --hostname 127.0.0.1",
     "typecheck": "next typegen && tsc --noEmit",
     "test": "node --test lib/*.test.ts",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "test:static": "playwright test --config playwright.static.config.ts"
   },
   "dependencies": {
     "next": "16.3.6",

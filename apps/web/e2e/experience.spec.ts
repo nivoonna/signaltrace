@@ -93,6 +93,7 @@ for (const scenario of ["Data flowing", "Data missing"] as const) {
     await inspect(page);
     await expect(page.getByText("Step 3 of 3", { exact: true })).toBeVisible();
     await onlyStep(page, "evidence");
+    if (!healthy) await page.locator(".raw-evidence > summary").click();
     await expect(page.getByText(sessionId, { exact: true })).toBeVisible();
     await expect(page.locator(".event-evidence")).toHaveCount(2);
     if (healthy) {
@@ -102,7 +103,7 @@ for (const scenario of ["Data flowing", "Data missing"] as const) {
       await expect(page.getByText("POST /events", { exact: true })).toHaveCount(2);
       for (const event of posts) await expect(page.getByText(event.event_id, { exact: true })).toBeVisible();
     } else {
-      await expect(page.getByText("The customer actions occurred, but analytics never attempted delivery, so nothing reached the backend.", { exact: true })).toBeVisible();
+      await expect(page.locator(".evidence-explanation")).toContainText("The original customer actions occurred, but they did not reach analytics.");
       await expect(page.getByText("Not initialized", { exact: false })).toHaveCount(2);
       await expect(page.getByText("None — no request was made", { exact: true })).toHaveCount(2);
       await expect(page.locator(".event-evidence").getByText("None", { exact: true })).toHaveCount(2);
@@ -156,9 +157,9 @@ test("Back and Forward preserve actions; changing scenario and starting over iso
   await onlyStep(page, "landing");
   await page.goBack();
   await expect(page).toHaveURL(/\/evidence$/);
-  await expect(page.getByRole("heading", { name: "Start a walkthrough first" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: /A customer taps\.\s*Does Product see it\?/ })).toBeVisible();
   await onlyStep(page, "restart");
-  await page.getByRole("button", { name: "Start over", exact: true }).click();
+  await page.getByRole("button", { name: "Choose a scenario", exact: true }).click();
   await page.getByRole("button", { name: "Start walkthrough" }).click();
   await expect(page.getByLabel("Cart: 0 items")).toBeVisible();
   await shop(page);
@@ -168,13 +169,16 @@ test("Back and Forward preserve actions; changing scenario and starting over iso
 
 for (const route of ["/play", "/results", "/evidence"]) {
   test(`${route}: direct visits and refreshes offer restart without fabricated results`, async ({ page }) => {
+    const viewport = route === "/play" ? { width: 390, height: 844 } : route === "/results" ? { width: 900, height: 1000 } : { width: 1440, height: 1000 };
+    await page.setViewportSize(viewport);
     const posts: string[] = [];
     page.on("request", (req) => { if (req.method() === "POST") posts.push(req.url()); });
     await page.goto(route);
-    await expect(page.getByRole("heading", { name: "Start a walkthrough first" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: /A customer taps\.\s*Does Product see it\?/ })).toBeVisible();
     await onlyStep(page, "restart");
     expect(posts).toEqual([]);
-    await page.getByRole("button", { name: "Start over", exact: true }).click();
+    await page.screenshot({ path: `test-results/welcome-${viewport.width}.png`, fullPage: true });
+    await page.getByRole("button", { name: "Choose a scenario", exact: true }).click();
     await expect(page).toHaveURL(/\/$/);
     await page.getByRole("button", { name: "Data missing", exact: true }).click();
     await page.getByRole("button", { name: "Start walkthrough" }).click();
@@ -183,7 +187,7 @@ for (const route of ["/play", "/results", "/evidence"]) {
     if (route === "/evidence") await inspect(page);
     await page.reload();
     expect(new URL(page.url()).pathname).toBe(route);
-    await expect(page.getByRole("heading", { name: "Start a walkthrough first" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: /A customer taps\.\s*Does Product see it\?/ })).toBeVisible();
     await onlyStep(page, "restart");
     expect(posts).toEqual([]);
     if (route === "/evidence") await page.screenshot({ path: "test-results/refresh-restart.png", fullPage: true });

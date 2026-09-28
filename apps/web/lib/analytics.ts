@@ -11,11 +11,18 @@ export type AnalyticsEvent = {
 };
 export type Attempt = {
   payload: AnalyticsEvent;
+  initialized: boolean;
   deliveryAttempted: boolean;
   pending: boolean;
   httpStatus: number | null;
   responseBody: string | null;
   error: string | null;
+};
+export type RuntimeLog = {
+  timestamp: string;
+  code: "customer_action" | "delivery_skipped_uninitialized" | "delivery_attempted" | "http_response" | "delivery_error" | "analytics_initialized";
+  event_id: string | null;
+  detail: string;
 };
 export type Snapshot = {
   sessionId: string;
@@ -26,7 +33,23 @@ export type Snapshot = {
   readState: "checking" | "ready" | "error";
   readError: string | null;
   checkedAt: string | null;
+  analyticsInitialized: boolean;
+  logs: RuntimeLog[];
+  validation: { eventIds: string[]; running: boolean } | null;
 };
+
+export function summarizeValidation(snapshot: Snapshot) {
+  const run = snapshot.validation;
+  const attempts = snapshot.attempts.filter((attempt) => run?.eventIds.includes(attempt.payload.event_id));
+  const received = attempts.filter((attempt) => isStored(attempt, snapshot)).length;
+  const complete = attempts.length === 2 && new Set(run?.eventIds).size === 2 &&
+    attempts.some((attempt) => attempt.payload.event === "product_viewed") &&
+    attempts.some((attempt) => attempt.payload.event === "product_added_to_cart");
+  const verified = Boolean(complete && !run?.running && snapshot.analyticsInitialized &&
+    attempts.every((attempt) => attempt.deliveryAttempted && !attempt.pending) &&
+    snapshot.readState === "ready" && received === 2);
+  return { received: snapshot.readState === "ready" ? received : null, verified };
+}
 
 export function isStored(attempt: Attempt, snapshot: Snapshot): boolean {
   return snapshot.received.some((event) =>
@@ -62,11 +85,15 @@ export function createExperience(mode: Mode, notify: (state: Snapshot) => void, 
   let state: Snapshot = {
     sessionId: id(), mode, cart: 0, attempts: [], received: [],
     readState: "checking", readError: null, checkedAt: null,
+    analyticsInitialized: mode === "healthy", logs: [], validation: null,
   };
   let disposed = false;
   let started = false;
   let readVersion = 0;
   const emit = () => { if (!disposed) notify(state); };
+  const log = (code: RuntimeLog["code"], event_id: string | null, detail: string) => {
+    state = { ...state, logs: [...state.logs, { timestamp: now(), code, event_id, detail }] };
+  };
   const updateAttempt = (eventId: string, change: Partial<Attempt>) => {
     state = { ...state, attempts: state.attempts.map((attempt) =>
       attempt.payload.event_id === eventId ? { ...attempt, ...change } : attempt) };
@@ -98,15 +125,19 @@ export function createExperience(mode: Mode, notify: (state: Snapshot) => void, 
     emit();
   }
 
-  async function track(event: EventName) {
+  async function track(event: EventName, validation = false) {
     if (disposed) return;
     const payload: AnalyticsEvent = {
       event_id: id(), event, session_id: state.sessionId, timestamp: now(), product_id: "nova-mug",
     };
-    const deliveryAttempted = mode === "healthy";
+    const deliveryAttempted = state.analyticsInitialized;
     state = { ...state, attempts: [...state.attempts, {
-      payload, deliveryAttempted, pending: deliveryAttempted, httpStatus: null, responseBody: null, error: null,
+      payload, initialized: state.analyticsInitialized, deliveryAttempted, pending: deliveryAttempted, httpStatus: null, responseBody: null, error: null,
     }] };
+    if (validation && state.validation) state = { ...state, validation: { ...state.validation, eventIds: [...state.validation.eventIds, payload.event_id] } };
+    log("customer_action", payload.event_id, event);
+    log(deliveryAttempted ? "delivery_attempted" : "delivery_skipped_uninitialized", payload.event_id,
+      deliveryAttempted ? "POST /events" : "Tracking stopped before HTTP delivery");
     emit();
     if (deliveryAttempted) {
       try {
@@ -115,8 +146,10 @@ export function createExperience(mode: Mode, notify: (state: Snapshot) => void, 
           body: JSON.stringify(payload), signal: AbortSignal.timeout(8000),
         });
         const responseBody = await response.text();
+        log("http_response", payload.event_id, `HTTP ${response.status}`);
         updateAttempt(payload.event_id, { httpStatus: response.status, responseBody });
       } catch (error) {
+        log("delivery_error", payload.event_id, error instanceof Error ? error.message : "No HTTP response");
         updateAttempt(payload.event_id, { error: error instanceof Error ? error.message : "No HTTP response received." });
       }
     }
@@ -125,18 +158,37 @@ export function createExperience(mode: Mode, notify: (state: Snapshot) => void, 
     updateAttempt(payload.event_id, { pending: false });
   }
 
+  async function addToCart(validation = false) {
+    if (disposed || !started) return;
+    state = { ...state, cart: state.cart + 1 };
+    emit();
+    await track("product_added_to_cart", validation);
+  }
+
   return {
     async start() {
       if (started || disposed) return;
       started = true;
       await track("product_viewed");
     },
-    async addToCart() {
-      if (disposed || !started) return;
-      state = { ...state, cart: state.cart + 1 };
+    addToCart: () => addToCart(),
+    initialize() {
+      if (disposed || !started || state.analyticsInitialized) return;
+      state = { ...state, analyticsInitialized: true };
+      log("analytics_initialized", null, "User applied the initialization fix");
       emit();
-      await track("product_added_to_cart");
     },
+    async runValidation() {
+      if (disposed || !started || !state.analyticsInitialized || state.validation?.running) return;
+      state = { ...state, validation: { eventIds: [], running: true } };
+      emit();
+      // Same tracking/cart path, new IDs and timestamps; never replay failed events.
+      await track("product_viewed", true);
+      await addToCart(true);
+      state = { ...state, validation: { ...state.validation!, running: false } };
+      emit();
+    },
+    getSnapshot: () => state,
     refresh,
     dispose() { disposed = true; },
   };

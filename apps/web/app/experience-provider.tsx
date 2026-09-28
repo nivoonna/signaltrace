@@ -3,6 +3,10 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
 import { createExperience } from "../lib/analytics";
 import type { Mode, Snapshot } from "../lib/analytics";
+import { createRecovery, initialRecovery } from "../lib/recovery";
+import type { RecoveryState } from "../lib/recovery";
+import { isStaticDemo } from "../lib/runtime-mode";
+import { createStaticDemo } from "../lib/static-demo";
 
 type Experience = {
   mode: Mode;
@@ -14,6 +18,10 @@ type Experience = {
   addToCart: () => void;
   refresh: () => void;
   reset: () => void;
+  recovery: RecoveryState;
+  diagnose: () => void;
+  applyFix: () => void;
+  validate: () => void;
 };
 
 const ExperienceContext = createContext<Experience | null>(null);
@@ -25,12 +33,17 @@ export function ExperienceProvider({ children }: { children: React.ReactNode }) 
   const [mode, selectScenario] = useState<Mode>("healthy");
   const [state, setState] = useState<Snapshot | null>(null);
   const [active, setActive] = useState(false);
+  const [recovery, setRecovery] = useState<RecoveryState>(initialRecovery);
   const current = useRef<ReturnType<typeof createExperience> | null>(null);
+  const recoveryController = useRef<ReturnType<typeof createRecovery> | null>(null);
   const started = useRef(false);
+  const walkthrough = useRef(0);
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   const dispose = useCallback(() => {
     clearTimeout(timer.current);
+    recoveryController.current?.dispose();
+    recoveryController.current = null;
     current.current?.dispose();
     current.current = null;
     started.current = false;
@@ -42,7 +55,10 @@ export function ExperienceProvider({ children }: { children: React.ReactNode }) 
     dispose();
     selectScenario(scenario);
     setState(null);
-    current.current = createExperience(scenario, setState);
+    const demo = isStaticDemo ? createStaticDemo(++walkthrough.current) : undefined;
+    current.current = createExperience(scenario, setState, demo);
+    setRecovery(initialRecovery);
+    recoveryController.current = createRecovery(current.current, setRecovery, demo?.transport);
     setActive(true);
   }, [dispose]);
 
@@ -61,13 +77,17 @@ export function ExperienceProvider({ children }: { children: React.ReactNode }) 
 
   const addToCart = useCallback(() => { void current.current?.addToCart(); }, []);
   const refresh = useCallback(() => { void current.current?.refresh(); }, []);
+  const diagnose = useCallback(() => { void recoveryController.current?.diagnose(); }, []);
+  const applyFix = useCallback(() => { void recoveryController.current?.applyFix(); }, []);
+  const validate = useCallback(() => { void recoveryController.current?.validate(); }, []);
   const reset = useCallback(() => {
     dispose();
     setState(null);
     setActive(false);
+    setRecovery(initialRecovery);
   }, [dispose]);
 
-  return <ExperienceContext.Provider value={{ mode, state, active, selectScenario, begin, viewProduct, addToCart, refresh, reset }}>
+  return <ExperienceContext.Provider value={{ mode, state, active, selectScenario, begin, viewProduct, addToCart, refresh, reset, recovery, diagnose, applyFix, validate }}>
     {children}
   </ExperienceContext.Provider>;
 }

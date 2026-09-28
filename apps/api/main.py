@@ -10,6 +10,7 @@ from pathlib import Path
 from fastapi import FastAPI, HTTPException, Response, status
 
 from .database import initialize_database, insert_event, read_session_events
+from .diagnostics import diagnostic_router
 from .models import AnalyticsEvent, EventReceipt, Identifier
 
 
@@ -84,6 +85,7 @@ def create_app(database_path: str | Path | None = None) -> FastAPI:
                 detail={"code": "storage_unavailable", "message": "Event storage is unavailable."},
             ) from exc
 
+    app.include_router(diagnostic_router(path))
     return app
 
 

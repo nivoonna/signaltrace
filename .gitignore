@@ -13,6 +13,7 @@ data/
 node_modules/
 .pnpm-store/
 .next/
+apps/web/out/
 *.tsbuildinfo
 test-results/
 playwright-report/

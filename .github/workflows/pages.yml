@@ -1,0 +1,63 @@
+name: Deploy SignalTrace demo to GitHub Pages
+
+on:
+  push:
+    branches: [deploy/github-pages]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: github-pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    if: github.ref == 'refs/heads/deploy/github-pages'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/web
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+      - name: Install pinned pnpm
+        run: npm install --global pnpm@11.19.0
+      - name: Install web dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Test browser state
+        run: pnpm test
+      - name: Build static demo
+        run: pnpm build:static
+      - name: Check exported routes
+        run: |
+          test -f out/index.html
+          test -f out/play/index.html
+          test -f out/results/index.html
+          test -f out/evidence/index.html
+          test -f out/.nojekyll
+      - name: Install test browser
+        run: pnpm exec playwright install --with-deps chromium
+      - name: Verify static journeys without an API
+        run: pnpm test:static
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v4
+        with:
+          path: apps/web/out
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy
+        id: deployment
+        uses: actions/deploy-pages@v4

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { createExperience, summarize } from "./analytics.ts";
+import { createExperience, summarize, summarizeValidation } from "./analytics.ts";
 import type { AnalyticsEvent, Mode, Snapshot } from "./analytics.ts";
 
 // Transport is explicitly mocked here. Backend tests and the browser exercise
@@ -166,3 +166,44 @@ test("an older read cannot overwrite newer stored evidence", async () => {
   assert.equal(f.state.checkedAt, latestState.checkedAt);
   assert.equal(f.state.readError, null);
 });
+
+test("a user fix preserves failed attempts; only a fresh stored validation restores delivery", async () => {
+  const f = fixture("issue");
+  await f.controller.start();
+  await f.controller.addToCart();
+  const original = structuredClone(f.state.attempts);
+  assert.equal(f.state.analyticsInitialized, false);
+  assert.equal(f.state.logs.filter((log) => log.code === "delivery_skipped_uninitialized").length, 2);
+  await f.controller.runValidation();
+  assert.equal(f.state.validation, null); // No validation before initialization.
+
+  f.controller.initialize();
+  f.controller.initialize(); // Idempotent; no replay and no success on fix alone.
+  assert.equal(f.state.analyticsInitialized, true);
+  assert.equal(f.state.logs.filter((log) => log.code === "analytics_initialized").length, 1);
+  assert.equal(f.calls.filter((call) => call.method === "POST").length, 0);
+  assert.equal(summarizeValidation(f.state).verified, false);
+
+  await f.controller.runValidation();
+  assert.deepEqual(f.state.attempts.slice(0, 2), original);
+  assert.deepEqual(f.controller.getSnapshot().validation?.eventIds, ["fixed-4", "fixed-5"]);
+  assert.equal(new Set(f.state.attempts.map((attempt) => attempt.payload.event_id)).size, 4);
+  assert.equal(new Set(f.state.attempts.map((attempt) => attempt.payload.session_id)).size, 1);
+  assert.deepEqual(f.rows.map((event) => event.event), ["product_viewed", "product_added_to_cart"]);
+  assert.deepEqual(summarizeValidation(f.state), { received: 2, verified: true });
+  assert.equal(f.state.cart, 2);
+});
+
+for (const storage of ["empty", "unavailable"] as const) {
+  test(`validation stays unverified when POST succeeds but storage is ${storage}`, async () => {
+    const f = fixture("issue", async (_, init) => init?.method === "POST"
+      ? Response.json({ status: "accepted" }, { status: 201 })
+      : storage === "empty" ? Response.json([]) : new Response("Unavailable", { status: 503 }));
+    await f.controller.start();
+    await f.controller.addToCart();
+    f.controller.initialize();
+    await f.controller.runValidation();
+    assert.deepEqual(summarizeValidation(f.state), { received: storage === "empty" ? 0 : null, verified: false });
+    assert.equal(f.state.attempts.filter((attempt) => attempt.httpStatus === 201).length, 2);
+  });
+}
