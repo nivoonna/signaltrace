@@ -4,7 +4,7 @@
 
 Analytics data records how people use an app, such as which products they view or add to their cart. Explore that journey through Nova, a fictional shopping app represented by a browser simulation. Nova's Product team wants reliable data to understand its customers' shopping journey.
 
-**Current status: the first visible MVP works locally.** Shop in Nova and watch actual stored events appear in Nova Analytics. Switch between **Healthy Implementation** and **Implementation Issue** to see how a working shopping app can still leave its Product team without the data it needs. Technical evidence is available in a collapsed section. AI diagnosis, applying a fix within an incident, and native iOS remain planned.
+**Current status: the first visible MVP works locally.** Choose **Data flowing** or **Data missing**, use Nova, review what Product receives, then inspect the delivery evidence. Each step has its own page. A working shopping app can still leave its Product team without the data it needs. AI diagnosis, applying a fix within an incident, and native iOS remain planned.
 
 The exercise demonstrates a simple product problem: a technical capability creates value only when it is implemented correctly and the customer can trust that it works.
 
@@ -75,11 +75,14 @@ pnpm dev
 
 If needed, install the pinned package manager with `npm install --global pnpm@11.19.0` first. Open [SignalTrace at localhost:3000](http://127.0.0.1:3000).
 
-1. In **Healthy Implementation**, opening the product creates one view event. Press **Add to cart**: the dashboard should show **Expected: 2**, **Received: 2**, and **Implementation healthy**.
-2. Switch to **Implementation Issue** and add the mug. The cart still updates, but the dashboard shows **Expected: 2**, **Received: 0**, and **Implementation issue**.
-3. Expand **View technical evidence**. Healthy events show actual response codes and stored records. Issue events show **Not initialized**, **Delivery attempted: No**, and **API request: None**.
+1. On `/`, choose **Data flowing** or **Data missing**, then **Start walkthrough**. The landing page does not generate events.
+2. On `/play`, opening the product creates one view action. Press **Add to cart**, then **See what Product receives**. Only the customer simulation appears on this page.
+3. On `/results`, review **Customer actions: 2** and **Reached analytics: 2 of 2** for Data flowing, or **0 of 2** for Data missing. The phone and raw evidence are absent. Choose **Inspect what happened**.
+4. On `/evidence`, inspect event IDs, the session, analytics state, actual HTTP results, and storage verification. Missing-data events show **Not initialized**, **Delivery attempted: No**, and **API request: None**. **Try other scenario** starts a fresh session on `/play`; **Start over** returns to `/`.
 
-Each mode switch, reload, or **Start fresh** creates a new session. More cart clicks create more expected events. The dashboard reads stored events after each action and polls three seconds after each completed background read. Backend failures show delivery as **unconfirmed**, not as a successful or empty read.
+The buttons use Next.js client navigation and change the browser URL. A React context in the shared root layout retains the selected scenario, session, cart, expected events, and delivery evidence across routes, including Back/Forward navigation. This state is deliberately held in memory: SQLite cannot reconstruct actions that were never delivered. Refreshing a step or opening it directly without a walkthrough shows a clear **Start over** screen instead of invented results. Accepted events remain in SQLite.
+
+More cart clicks create more expected events. Storage is read after each action and polled three seconds after each completed background read, including while viewing evidence. Backend failures show delivery as **unconfirmed**, not as a successful or empty read.
 
 The web server forwards `/api/events` to FastAPI's `/events` and `/api/sessions/{session_id}/events` to the matching read endpoint. Set `SIGNALTRACE_API_URL` before starting/building Next.js to change its default `http://127.0.0.1:8000` destination. No CORS configuration or browser secrets are required. To run the optimized build, use `pnpm build` then `pnpm start` instead of `pnpm dev`.
 
@@ -173,7 +176,7 @@ pnpm build
 
 The 16 browser-state cases use fixed IDs/clocks and explicitly mocked transport. They verify both modes, exact event payloads, storage-backed health, mismatched records, errors/recovery, repeated actions, and stale responses. They do not substitute for running the two applications together.
 
-With both applications running, six Playwright browser tests check actual delivery/retrieval, no delivery in issue mode, session resets, an explicitly mocked read outage and recovery, a narrow screen, and keyboard controls. They add new UUID sessions to the local demo database without changing existing records. Screenshots and session evidence are written to ignored `apps/web/test-results/` files.
+With both applications running, ten Playwright browser tests check both complete route journeys, URL changes and step isolation, actual delivery/retrieval, no delivery in issue mode, Back/Forward navigation, session resets, direct visits and refreshes, delivery completing after navigation, an explicitly mocked read outage and recovery, a narrow screen, and keyboard controls. They add new UUID sessions to the local demo database without changing existing records. Screenshots and session evidence are written to ignored `apps/web/test-results/` files.
 
 ```powershell
 # Use an installed Chrome browser (PowerShell):
