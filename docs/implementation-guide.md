@@ -4,6 +4,10 @@ Setup, API contracts, diagnostics, tests, and deployment reference for the curre
 
 Start with the [public demo](#live-demo), [local full-stack setup](#full-stack-implementation), [event contract](#event-contract), or [test instructions](#run-the-tests).
 
+## Development workflow
+
+`main` is the canonical branch. New product work should branch from `main`, be reviewed, and merge back into `main`. GitHub Pages is built from `main` using static-demo mode; the same codebase continues to support the local full-stack implementation by default. The earlier feature and deployment branches remain available as historical development branches.
+
 ## What exists and what is planned
 
 The labels describe different dimensions: **implemented** means present and verified; **planned** means not built; **simulated** means an intentional model of another system; **mocked** means a fixed test substitute. A future component can be implemented while still representing a simulation.
@@ -28,7 +32,7 @@ Nova is fictional. Product names, scenarios, data, assets, and implementation wi
 
 ## Live demo
 
-[Public GitHub Pages walkthrough](https://nivoonna.github.io/signaltrace/) — live on GitHub Pages. The deployment workflow publishes committed changes pushed to `deploy/github-pages`.
+[Public GitHub Pages walkthrough](https://nivoonna.github.io/signaltrace/) — live on GitHub Pages. The deployment workflow publishes committed changes pushed to `main`.
 
 The hosted walkthrough uses **browser simulation**. It runs without FastAPI, SQLite, API keys, or external services. Choose **Data flowing** or **Data missing**, then follow `/signaltrace/` → `/signaltrace/play/` → `/signaltrace/results/` → `/signaltrace/evidence/`. Data missing includes **Diagnose the issue → Apply fix → Run validation → Implementation restored**.
 
@@ -53,12 +57,12 @@ After building, stop the preview before running `pnpm test:static`: Playwright s
 ### Publish to GitHub Pages
 
 1. In `nivoonna/signaltrace`, open **Settings → Pages → Build and deployment → Source**, and select **GitHub Actions**. Do not select “Deploy from a branch.”
-2. In **Settings → Environments → github-pages**, allow **deploy/github-pages** under deployment branches if a branch restriction exists. If the environment does not yet exist, create it with that name and allow the branch.
-3. After reviewing the changes, commit them on `deploy/github-pages` and push with `git push -u origin deploy/github-pages`. No merge to `main` is needed.
-4. Open **Actions → Deploy SignalTrace demo to GitHub Pages** and wait for both `build` and `deploy` to pass. If setup was completed after an initial failure, use **Re-run all jobs**. The first push triggers the workflow even if the workflow is absent from the default branch; the manual “Run workflow” button may require it on the default branch.
+2. In **Settings → Environments → github-pages**, allow **main** under deployment branches if a branch restriction exists. If the environment does not yet exist, create it with that name and allow the branch.
+3. Review and merge product changes into `main`. Updates pushed to `main` trigger deployment; no separate deployment branch needs to be synchronized.
+4. Open **Actions → Deploy SignalTrace demo to GitHub Pages** and wait for both `build` and `deploy` to pass. If setup was completed after an initial failure, use **Re-run all jobs**. For a manual redeployment, choose **Run workflow** on **main**.
 5. Open [https://nivoonna.github.io/signaltrace/](https://nivoonna.github.io/signaltrace/) and try both scenarios.
 
-The workflow installs the pinned dependencies, runs state tests, builds the static export, checks all four HTML routes, and runs browser-only journey tests before uploading **only `apps/web/out`**. Deployment uses GitHub's built-in token and the `github-pages` environment; no API keys or backend hosting are required. Subsequent pushes to `deploy/github-pages` redeploy. See [GitHub's custom Pages workflow instructions](https://docs.github.com/en/pages/getting-started-with-github-pages/using-custom-workflows-with-github-pages).
+The workflow installs the pinned dependencies, runs state tests, builds the static export, checks all four HTML routes, and runs browser-only journey tests before uploading **only `apps/web/out`**. Deployment uses GitHub's built-in token and the `github-pages` environment; no API keys or backend hosting are required. Subsequent pushes to `main` redeploy. See [GitHub's custom Pages workflow instructions](https://docs.github.com/en/pages/getting-started-with-github-pages/using-custom-workflows-with-github-pages).
 
 ## Full-stack implementation
 
@@ -315,4 +319,4 @@ evals/                       Agent cases, rubrics, runner, and labeled reports
 - [Product decisions](product-decisions.md): the choices behind the design and their tradeoffs.
 - [Build plan](build-plan.md): milestones, tests, and evaluation of the Copilot's diagnoses.
 
-The visible MVP demonstrates healthy delivery, missing analytics, and verified recovery through the same shopping interface. The public static export and its deployment workflow live on `deploy/github-pages`; the full-stack backend remains local. The broader Diagnostic Flow, Integration Copilot, native app, and public backend deployment remain separate, reviewable increments.
+The visible MVP demonstrates healthy delivery, missing analytics, and verified recovery through the same shopping interface. Both operating modes and the public static deployment workflow are maintained on `main`; the full-stack backend remains local. The broader Diagnostic Flow, Integration Copilot, native app, and public backend deployment remain separate, reviewable increments.

@@ -2,7 +2,7 @@ name: Deploy SignalTrace demo to GitHub Pages
 
 on:
   push:
-    branches: [deploy/github-pages]
+    branches: [main]
   workflow_dispatch:
 
 permissions:
@@ -14,7 +14,7 @@ concurrency:
 
 jobs:
   build:
-    if: github.ref == 'refs/heads/deploy/github-pages'
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     defaults:
       run:
