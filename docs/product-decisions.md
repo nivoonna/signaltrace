@@ -1,6 +1,6 @@
 # SignalTrace product decisions
 
-Status: proposed decisions for the initial architecture review. These entries record design intent, alternatives, consequences, and revisit triggers. They do not claim implementation or completed validation. See [architecture](architecture.md) for contracts and [build plan](build-plan.md) for milestone gates.
+Status: D12 records the implemented ingestion increment. The broader decisions remain design intent except where the [README](../README.md) explicitly marks functionality implemented. See [architecture](architecture.md) for contracts and [build plan](build-plan.md) for milestone gates.
 
 ## D01 — Start with one complete incident
 
@@ -112,11 +112,35 @@ Status: proposed decisions for the initial architecture review. These entries re
 
 **Revisit when:** Measured update latency or event volume makes polling inadequate.
 
+## D12 — Implement ingestion as the first bounded increment
+
+**Decision:** Implement only `POST /events`, a five-field event contract, SQLite persistence, and deterministic ingestion tests. Use `event_id`, `event`, `session_id`, `timestamp`, and `product_id`; require a product for both supported event types. Accept new events with `201`, reject invalid or unsupported events with `422`, and reject every duplicate event ID with `409`.
+
+**Why:** This delivers one real, independently verifiable step of the Happy Flow. The endpoint can receive an HTTP request and prove durable storage before any interface or SDK is built. Standard-library SQLite keeps the storage dependency small. Pinned runtime and test requirements capture the verified dependency set.
+
+**Alternative and tradeoff:** The earlier proposal used `/v1/events`, a richer envelope, session-scoped uniqueness, and `200` for identical replays. This increment supersedes those choices with a smaller explicit contract and globally unique event IDs. An identical retry is safe from double counting but receives a conflict rather than an acceptance response. A future client must account for that distinction.
+
+**Boundary:** Session IDs are currently metadata. Authentication, session authorization, SDK behavior, diagnostic tools, AI, UI, native code, CI, and deployment remain deferred. This increment does not complete M1 or the full Happy Flow. No commit is created until the user reviews the change.
+
+**Revisit when:** A subsequent increment needs retries, additional event types or metadata, authenticated sessions, or public hosting. Change the contract and tests explicitly rather than silently introducing the older proposal.
+
+## D13 — Deliver the visible MVP with a browser analytics model
+
+**Decision:** Keep the committed ingestion contract unchanged, add `GET /sessions/{session_id}/events`, and build the first Nova shopping/analytics experience in Next.js/React. Browser memory owns the cart, expected events, initialization state, and delivery attempts. Healthy tracking uses actual HTTP ingestion and SQLite; uninitialized tracking sends no ingestion request. The dashboard verifies storage before reporting health.
+
+**Why:** This bounded increment makes customer goal → implementation → observable value tangible without prematurely building the full backend incident engine or Copilot. Primary language describes the shopping journey and missing Product data; technical evidence is progressively disclosed.
+
+**Alternative and tradeoff:** The future architecture puts simulation state in FastAPI for shared diagnostic tools and validation. D13 supersedes that placement only for this MVP. Browser evidence is ephemeral, sessions are not authenticated, reads are unpaginated, and switching modes creates a fresh session rather than repairing the original one. Accepted events remain durable. Polling refreshes after actions and every three seconds after a background read completes; there is no streaming or ingestion retry.
+
+**Boundary:** One product, two event types, one missing-initialization incident. No AI, native client, checkout, incident remediation, or full evaluation framework. Original SVG artwork avoids an external asset dependency. Node.js 24+, Next.js 16.3.6, React 19.3.0, and pnpm 11.19.0 are pinned/declared with a dependency lockfile. No automatic commit.
+
+**Revisit when:** Adding backend diagnostic tools, same-session recovery, native parity, or public hosting. Those increments require durable/shared evidence, session authorization, retention, and bounded reads before claiming the larger architecture is implemented.
+
 ## Open decisions
 
 | Decision | Resolve by | Evidence required |
 | --- | --- | --- |
-| Runtime, dependency, schema, and test-runner versions | First implementation PR | Compatible supported releases, reproducible lockfiles, documented local commands |
+| Future web/native dependencies and event contract extensions | Relevant implementation increment | Compatible versions, pinned dependency files, contract tests, documented local commands; ingestion requirements are already pinned |
 | Model identifier, prompt version, and provider limits | Live Copilot milestone | Live evaluation results, account availability, latency and cost budget |
 | Minimum iOS target and native build setup | Native milestone | Available macOS/Xcode environment and required SwiftUI capabilities |
 | Hosting, persistent volume, session retention, cleanup, and spend caps | Before public deployment | Deployment constraints, isolation checks, bounded resource use |
