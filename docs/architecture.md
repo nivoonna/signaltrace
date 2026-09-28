@@ -1,6 +1,18 @@
 # SignalTrace architecture
 
-Status: proposed architecture, ready for review. Every runtime component, endpoint, schema, tool, and example below is planned. Nothing in this document is evidence of a running system. Scope and user intent are defined in the [product brief](product-brief.md); delivery gates are in the [build plan](build-plan.md).
+Status: `POST /events`, its event contract, SQLite storage, and deterministic ingestion tests are implemented. The broader system described below remains a target architecture. Scope and user intent are defined in the [product brief](product-brief.md); delivery gates are in the [build plan](build-plan.md).
+
+## Implemented increment: event ingestion
+
+The implemented path is HTTP client → FastAPI request validation → SQLite. `apps/api/models.py` defines the contract; `database.py` creates the table and commits inserts; `main.py` exposes `POST /events`. There is no SDK simulation, session controller, dashboard, or agent in this increment.
+
+Each event contains required `event_id`, `event`, `session_id`, `timestamp`, and `product_id` fields. The supported event names are `product_viewed` and `product_added_to_cart`. IDs are case-sensitive strings of 1–128 non-whitespace characters. Timestamps require a timezone and are normalized to UTC. Extra fields are rejected. See the [README event contract](../README.md#event-contract) for the exact timestamp format and runnable examples.
+
+SQLite enforces global uniqueness of `event_id`. Accepted inserts return `201` only after commit. All duplicate IDs return `409` without changing the original row, including identical replays and submissions with another session. Invalid or unsupported events return `422`; operational storage failures return `503`. This supersedes the earlier proposed `/v1/events` route, session-scoped duplicate key, and `200` duplicate response.
+
+Each insertion uses a short-lived connection, a parameterized statement, and a transaction. Database setup runs at application startup. `SIGNALTRACE_DB_PATH` selects the file, defaulting to `data/signaltrace.sqlite3` relative to the working directory. Tests use isolated files and independently read stored rows; the database and transport behavior are not mocked.
+
+Authentication, session ownership, read endpoints, richer event metadata, migrations, and deployment are deferred. `session_id` is currently metadata supplied by the caller, not an authorization boundary. Run the API locally until those controls are implemented. The following sections retain the deeper design for subsequent increments.
 
 ## System boundaries
 
@@ -61,7 +73,7 @@ All OpenAI API calls will run in FastAPI. `OPENAI_API_KEY` will be loaded only f
 | Verification | pytest, web unit tests, Playwright, Swift tests | Separate backend behavior, UI logic, browser flow, and native behavior |
 | CI | GitHub Actions | Reviewable checks and artifacts associated with commits and PRs; native checks require an appropriate macOS runner |
 
-These choices follow the requested architecture preferences. Relevant platform capabilities are documented in [Next.js](https://nextjs.org/docs), [FastAPI features](https://fastapi.tiangolo.com/features/), and [SQLite deployment guidance](https://www.sqlite.org/whentouse.html). Runtime and dependency versions will be pinned when implementation begins; none is installed or selected here.
+These choices follow the requested architecture preferences. Relevant platform capabilities are documented in [Next.js](https://nextjs.org/docs), [FastAPI features](https://fastapi.tiangolo.com/features/), and [SQLite deployment guidance](https://www.sqlite.org/whentouse.html). The implemented API targets Python 3.12+, with pinned runtime and test dependencies in `requirements.txt` and `requirements-dev.txt`. Web, native, and AI dependencies remain unselected.
 
 ## SDK and commerce behavior
 
@@ -92,11 +104,11 @@ All records will carry an opaque `session_id`; activity will additionally use `r
 
 Failed attempts and later successes remain separate records. A validation must not erase the baseline failure. Starting over creates a new isolated session; cleanup may remove expired demo sessions according to the documented retention setting. The exact retention period is a deployment decision still open.
 
-Use a unique constraint on `(session_id, event_id)`. Repeating an identical event is an idempotent duplicate; reusing an ID with different content is a conflict. Reads must enforce session scope even if a caller guesses another run or event ID.
+The implemented event table uses a globally unique `event_id`; all duplicate submissions are rejected with `409`, and the original row remains unchanged. Future read endpoints must enforce session scope even if a caller guesses another run or event ID; no read endpoint or session authorization exists yet.
 
 ## Proposed API contract
 
-Paths below are relative to the FastAPI service. The web deployment should expose it through a same-origin `/api` proxy. A session cookie/capability will bind browser requests to the server-assigned session; session IDs in URLs or model arguments are not authorization. Cookie-authenticated mutations must validate the request origin and use CSRF protection as appropriate.
+Only `POST /events` below is implemented. The other endpoints remain planned. Paths are relative to FastAPI; a future web deployment should expose the service through a same-origin `/api` proxy. A session cookie/capability will bind browser requests to the server-assigned session; session IDs in URLs or model arguments are not authorization. Cookie-authenticated mutations must validate the request origin and use CSRF protection as appropriate.
 
 | Method and path | Purpose | First-slice outcome |
 | --- | --- | --- |
@@ -109,28 +121,27 @@ Paths below are relative to the FastAPI service. The web deployment should expos
 | `POST /demo/validations` | Execute a bounded replay through the commerce and SDK path | `200` with a completed result; a failed check is a result, not an HTTP success claim about ingestion |
 | `GET /demo/validations/{run_id}` | Read the recorded validation result | `200`, or `404` if unavailable to this session |
 | `POST /copilot/turns` | Ask the server-side Integration Copilot | `200` with answer and trace; a provider failure is surfaced separately |
-| `POST /v1/events` | Receive one event from simulated or native SDK | `201` after persistence; `200` for an identical duplicate |
+| `POST /events` | Receive one analytics event; implemented now | `201` after persistence; `409` for any duplicate event ID |
 
-The ingestion credential is a limited, session-scoped demo credential, separate from the browser's control capability and from the OpenAI key. For the backend simulation it stays on the server; the native reference receives only the limited credential necessary to send its own demo events. It must not permit diagnostic reads, fixes, or access to another session. Body identifiers must match credential scope.
+Ingestion authentication is deferred. The planned credential will be limited and session-scoped, separate from the browser's control capability and from the OpenAI key. For the backend simulation it will stay on the server; the native reference will receive only the limited credential necessary to send its own demo events. It must not permit diagnostic reads, fixes, or access to another session. Body identifiers must match credential scope once that boundary exists.
 
 The control API will reject unauthenticated or expired session access, invalid input, and concurrent mutations with explicit errors. Once a validation starts, conflicting commerce or configuration mutations return `409` until it completes. The bounded first-slice run is synchronous; a future longer workflow can introduce jobs without changing the meaning of validation results.
 
 ### Event envelope and HTTP outcomes
 
-The initial versioned event schema will contain `schema_version`, `event_id`, `session_id`, `run_id`, `action_id`, `name`, `occurred_at`, `source`, and `properties`. The first two event names are `product_viewed` and `product_added_to_cart`. Properties include an original fictional `product_id`; the cart event also includes positive integer `quantity`. Initial schemas will reject undeclared properties and personal identifiers. `source` distinguishes `browser_simulation` from `ios_reference`; it is not an authorization mechanism.
+The implemented schema contains `event_id`, `event`, `session_id`, `timestamp`, and `product_id`. Both supported product events require the product identifier. `schema_version`, `run_id`, `action_id`, `source`, richer properties, and cart quantity remain possible future additions, requiring an explicit contract revision and tests. Current requests containing those undeclared fields are rejected. A future `source` field may distinguish browser simulation from native execution; it will not be an authorization mechanism.
 
 | Observation | Meaning | Storage and display |
 | --- | --- | --- |
 | No request; `SDK_NOT_INITIALIZED` | Tracking stopped inside the SDK model | Dropped attempt, `http_status=null`, no delivery-request row |
 | `201` | New valid event persisted | Receipt and stored event are available |
-| `200` with duplicate marker | Identical event already exists | No extra event row; identify the original receipt |
 | `401` | Ingestion credential missing or invalid | Authentication rejection; never describe it as missing initialization |
-| `409` | Event ID reused with different content | Conflict; original event remains unchanged |
+| `409` | Event ID already exists, regardless of content or session | Conflict; original event remains unchanged |
 | `422` | Event envelope fails schema validation | Structured validation errors; no event persisted |
 | `503` | Ingestion service cannot complete the request | Server failure; no success inferred |
 | Timeout / connection failure | No HTTP response was observed | `http_status=null`; receipt state may be unknown until queried |
 
-These are proposed API semantics, not existing responses. Later incident controls for `401`, `422`, and `503` are backlog items even if normal endpoint validation handles these conditions earlier. A successful `/demo/actions` response only confirms command processing; its status is never reused as the analytics delivery status.
+The ingestion endpoint currently implements `201`, `409`, `422`, and `503` for SQLite operational failures. Authentication (`401`), SDK outcomes, transport diagnostics, and incident controls remain planned. A future successful `/demo/actions` response will only confirm command processing; its status must never be reused as the analytics delivery status.
 
 No receipts will be fabricated when transport fails. A lost response may coexist with a stored event; the dashboard will preserve both facts, and the validator will report an incomplete delivery check until the discrepancy is resolved.
 
@@ -205,6 +216,6 @@ Native SDK state initially remains local to the reference app. The browser Copil
 
 The initial deployment assumes one FastAPI instance with persistent local SQLite storage and a same-origin web/API entry point. It does not assume a stateless hosting filesystem or multiple database writers across machines. OpenAI traffic and the SDK model's ingestion URL are server-configured, not user-controlled destinations.
 
-Before public hosting, select the host and persistent-volume arrangement, session expiration and cleanup, request and provider-spend limits, and an operational logging policy. Keep all data fictional, redact credentials, and expose only sanitized diagnostic fields to the model. Domain setup, hosting, and live API spending are outside this documentation task.
+Before public hosting, select the host and persistent-volume arrangement, session expiration and cleanup, request and provider-spend limits, and an operational logging policy. Keep all data fictional, redact credentials, and expose only sanitized diagnostic fields to the model. Domain setup, hosting, and live provider spending are outside the current ingestion increment.
 
-The model/version, package versions, minimum iOS target, exact cost/time limits, and additional incident order remain open. These do not block architecture review. Revisit triggers and alternatives are recorded in [product decisions](product-decisions.md).
+The model/version, web/native package versions, minimum iOS target, exact cost/time limits, and additional incident order remain open. The ingestion dependencies are pinned. Revisit triggers and alternatives are recorded in [product decisions](product-decisions.md).

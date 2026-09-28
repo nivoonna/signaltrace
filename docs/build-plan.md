@@ -1,13 +1,13 @@
 # SignalTrace build plan
 
-Status: documentation stage. This plan defines future work; no application code, test suite, evaluation harness, workflow, or deployment exists yet. Only milestone M0's documentation deliverables are present. This task stops at documentation and architecture review.
+Status: the first functional increment implements `POST /events`, event validation, SQLite persistence, and deterministic tests. It is ready for review before a commit. The rest of the system, agent evaluations, CI, and deployment remain planned.
 
 ## Delivery sequence
 
 | Milestone | Outcome | Status |
 | --- | --- | --- |
-| M0 | Product framing and architecture ready for review | Documents present; review pending |
-| M1 | Deterministic incident engine, evidence, and HTTP ingestion | Planned |
+| M0 | Product framing and architecture | Documents present |
+| M1 | Deterministic incident engine, evidence, and HTTP ingestion | In progress: ingestion only is implemented |
 | M2 | Browser failure-to-recovery experience and validation | Planned |
 | M3 | Live Integration Copilot with visible tools and agent evaluations | Planned |
 | M4 | Native SwiftUI app, Swift SDK, and parity evidence | Planned |
@@ -23,7 +23,11 @@ Acceptance: the purpose and current status are clear at the entry point; product
 
 ## M1 — Deterministic incident engine and ingestion
 
-Create only the backend and contract scaffolding required for the first incident. Pin runtime/dependency versions, add reproducible local commands, and establish offline GitHub Actions checks in the same milestone.
+Build this milestone through small, independently reviewable increments. The first implements only ingestion: FastAPI `POST /events`, the five-field contract, SQLite, and deterministic tests. It does not add a commerce flow, SDK simulation, authentication, dashboard, diagnostics, or AI.
+
+The first increment's checks cover both supported event types, malformed and unsupported input, duplicate IDs including concurrent submissions, UTC normalization, durable storage across application restart, configurable database paths, and storage failure. Setup and test commands are in the [README](../README.md#run-the-event-ingestion-api). Runtime and test dependencies are pinned. No commit is created before user review.
+
+The remainder of M1 stays planned. Add only the backend and contract scaffolding required by each subsequent increment. Establish offline GitHub Actions checks later in this milestone; CI is not included in the first ingestion increment.
 
 Implement isolated demo sessions, the two commerce commands, independent event expectations, the SDK state machine, bounded runtime logs, ingestion, and evidence persistence. Add the controlled initialization action and enforce session ownership. Use actual HTTP for an initialized simulated SDK in the runnable path, as defined in [architecture](architecture.md).
 
@@ -92,7 +96,7 @@ Further incidents are backlog work after this milestone sequence. Each new scena
 
 ## Verification strategy
 
-No tests in this table exist yet. Add them alongside the relevant implementation, rather than deferring verification to the end.
+Ingestion tests for accepted events, malformed/unsupported input, duplicates, UTC normalization, restart persistence, configuration, and storage failure now exist. Authentication checks and the other test layers below remain planned. Add each alongside its implementation rather than deferring verification to the end.
 
 | Layer | Planned checks | What they establish |
 | --- | --- | --- |
@@ -129,7 +133,7 @@ Reports should include commit, case-set version, model identifier, prompt/tool v
 
 ## GitHub and Codex-assisted workflow
 
-The future workflow will use a scoped issue, a focused branch, and a reviewable PR for each coherent increment. The issue should identify the user-visible outcome, relevant decision IDs, acceptance criteria, and affected contracts. No issues, branches, PRs, or workflows are created by this documentation task.
+The future workflow will use a scoped issue, a focused branch, and a reviewable PR for each coherent increment. The issue should identify the user-visible outcome, relevant decision IDs, acceptance criteria, and affected contracts. This ingestion task stops with local changes for review; it creates no commit, issue, branch, PR, or workflow.
 
 Use Codex to implement bounded changes against those criteria, inspect its diff, and verify the behavior with the appropriate checks. Each PR should explain the problem and resulting behavior, include actual verification evidence and limitations, and update README status and affected design decisions. Do not describe planned checks as passing checks.
 
@@ -137,4 +141,4 @@ Run formatting, type checks, relevant deterministic tests, and contract checks i
 
 ## Current stop point
 
-The five documentation files are the deliverable for this task. Architecture review can now assess the first incident, simulated/native boundary, HTTP and tool contracts, recovery criteria, and open decisions. Implementation, dependency installation, deployment, and live API calls belong to subsequent work.
+The event ingestion API and its tests are the current deliverable. Review the schema, `201`/`422`/`409` behavior, SQLite persistence, and test evidence before creating the first implementation commit. The full Happy Flow, Diagnostic Flow, dashboard, Integration Copilot, OpenAI integration, and SwiftUI app belong to subsequent increments.

@@ -4,7 +4,7 @@
 
 Analytics data records how people use an app, such as which products they view or add to their cart. The planned experience lets you explore that journey through Nova, a fictional shopping app represented by a browser simulation.
 
-**Current status: documentation only.** Both experiences below are planned; there is no runnable app or Integration Copilot yet.
+**Current status: the event ingestion API is implemented.** You can send an event over HTTP, have it checked and stored in SQLite, and verify the behavior with automated tests. The two full experiences below remain planned; there is no shopping interface, dashboard, or Integration Copilot yet.
 
 ## Happy Flow — See how it works
 
@@ -50,13 +50,83 @@ The labels describe different dimensions: **implemented** means present and veri
 | Product brief, architecture, decisions, build plan | Present; ready for review | Documentation of the proposed product |
 | Nova commerce experience | Planned; intended simulation | Browser representation of a simple iOS shopping app |
 | Browser-path SDK model | Planned; intended simulation | Backend-owned SDK state with reproducible incident behavior |
-| Event API, stored events, logs, dashboard | Planned | Actual HTTP requests, persisted evidence, and observed delivery status |
+| Event ingestion API and stored events | Implemented | `POST /events` validates and persists events in SQLite |
+| Automated ingestion tests | Implemented | Accepted events, invalid input, duplicate protection, and persistence after restart |
+| Runtime evidence logs and dashboard | Planned | Inspect SDK behavior and observed delivery status |
 | Integration Copilot | Planned | Live server-side OpenAI calls and explicit diagnostic functions |
 | Provider responses in deterministic tests | Planned; intended mocks | Clearly labeled fixed responses; never presented as live AI |
 | SwiftUI app and `NovaAnalyticsSDK` | Planned | Native reference app and original Swift package |
-| Tests, evaluations, GitHub Actions, hosted demo | Planned | Verification and delivery evidence; no results yet |
+| Broader tests, agent evaluations, GitHub Actions, hosted demo | Planned | Full-flow verification and delivery evidence; no agent evaluation results yet |
 
 Nova is fictional. Product names, scenarios, data, assets, and implementation will be original. No employer code, internal documentation, screenshots, architecture, or data are used. Any simulated business metrics must be labeled **demo data**.
+
+## Run the event ingestion API
+
+This first increment accepts one event at a time through `POST /events`. It uses real FastAPI validation and a real SQLite file; no application behavior is simulated or mocked here. Authentication and session ownership checks are deferred, so this increment is intended for local use. `session_id` is event metadata, not proof of identity.
+
+With Python 3.12+ installed, run these commands from the repository root. PowerShell:
+
+```powershell
+python -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -r requirements-dev.txt
+.\.venv\Scripts\python.exe -m uvicorn apps.api.main:app --host 127.0.0.1 --port 8000
+```
+
+On macOS/Linux, use `python3 -m venv .venv` and `.venv/bin/python` in place of `.\.venv\Scripts\python.exe` for the remaining commands. Runtime-only installation can use `requirements.txt` instead.
+
+The database is created at `data/signaltrace.sqlite3` when the app starts. Set `SIGNALTRACE_DB_PATH` before startup to use another SQLite file; relative paths are resolved from the working directory. The database and virtual environment are ignored by Git. Interactive API documentation is available at [localhost:8000/docs](http://127.0.0.1:8000/docs) while the server runs.
+
+### Event contract
+
+All five fields are required. Both supported events describe a product, so both require `product_id`.
+
+| Field | Rule |
+| --- | --- |
+| `event_id` | Globally unique, case-sensitive string; 1–128 characters with no whitespace |
+| `event` | Exactly `product_viewed` or `product_added_to_cart` |
+| `session_id` | Case-sensitive string; 1–128 characters with no whitespace |
+| `timestamp` | ISO 8601 string: `YYYY-MM-DDTHH:MM:SS[.ffffff]Z` or an explicit `+/-HH:MM` timezone offset; normalized to UTC for storage |
+| `product_id` | Case-sensitive string; 1–128 characters with no whitespace |
+
+Extra fields, missing fields, invalid types, invalid dates, timestamps without a timezone, and numeric timestamps are rejected. This increment has no product catalog: `product_id` identifies a product but is not checked against a catalog.
+
+Send an event from a second PowerShell terminal:
+
+```powershell
+$event = @{
+    event_id = 'evt-001'
+    event = 'product_viewed'
+    session_id = 'session-001'
+    timestamp = '2026-09-28T12:34:56Z'
+    product_id = 'nova-mug'
+} | ConvertTo-Json
+
+Invoke-RestMethod -Method Post -Uri 'http://127.0.0.1:8000/events' -ContentType 'application/json' -Body $event
+```
+
+The first submission returns `201 Created` with:
+
+```json
+{"event_id": "evt-001", "status": "accepted"}
+```
+
+| Request outcome | HTTP response | Storage behavior |
+| --- | --- | --- |
+| Valid new event | `201 Created` with event ID and `accepted` status | Returned only after SQLite commits the row |
+| Malformed JSON or invalid event fields | `422 Unprocessable Entity` with a `detail` list of validation errors | Nothing stored |
+| Unsupported event type | `422 Unprocessable Entity` with an error for `event` | Nothing stored |
+| Duplicate `event_id`, even with a different session or payload | `409 Conflict` with `detail.code=duplicate_event_id` | Original record unchanged |
+| SQLite operational failure | `503 Service Unavailable` with `detail.code=storage_unavailable` | No acceptance reported |
+
+Repeating the example produces a duplicate response. Use a new `event_id` for a new action. There is no event-reading HTTP endpoint yet; automated tests inspect the database through an independent SQLite connection.
+
+### Run the tests
+
+```powershell
+.\.venv\Scripts\python.exe -m pytest -q
+```
+
+The tests use fixed inputs and separate temporary SQLite files, leaving the local demo database untouched. They cover both supported events, identifier and timestamp boundaries, malformed/unsupported input, duplicate protection including concurrent requests, persistence after reopening the app, database configuration, and storage failure. Most requests exercise FastAPI in-process; one live Uvicorn test verifies acceptance and duplicate responses over real HTTP on an ephemeral localhost port, then stops the server.
 
 ## First incident: SDK not initialized
 
@@ -122,7 +192,7 @@ Tool access is scoped to the active session by the backend. The agent diagnoses 
 
 ## Validation and evaluation
 
-Deterministic tests will verify SDK transitions, schemas, HTTP responses, persistence, session isolation, and the complete failure-to-recovery flow. A validation pass requires fresh evidence from the current run, including both expected events in storage; a green chat message is insufficient.
+Deterministic ingestion tests now verify the event contract, HTTP responses, SQLite persistence, and duplicate protection. Tests for SDK transitions, authorized session isolation, and the complete failure-to-recovery flow remain planned. In that future flow, a validation pass will require fresh evidence from the current run, including both expected events in storage; a green chat message will be insufficient.
 
 Agent evaluations will separately assess tool use, correct root cause, evidence grounding, uncertainty, and appropriate remediation. Offline tests will mock the model provider; separately labeled live evaluations will exercise the real OpenAI integration. Report versions, sample sizes, failures, latency, and cost alongside results. There are no measured results yet.
 
@@ -135,6 +205,16 @@ Present now:
 ```text
 signaltrace/
 |-- README.md
+|-- .gitignore
+|-- requirements.txt
+|-- requirements-dev.txt
+|-- apps/api/
+|   |-- __init__.py
+|   |-- main.py
+|   |-- models.py
+|   `-- database.py
+|-- tests/
+|   `-- test_events.py
 `-- docs/
     |-- product-brief.md
     |-- architecture.md
@@ -146,11 +226,9 @@ Proposed implementation directories — none exists yet:
 
 ```text
 apps/web/                    Next.js interface
-apps/api/                    FastAPI, simulation, ingestion, tools, validation
 apps/ios/                    Nova SwiftUI reference app
 packages/NovaAnalyticsSDK/    Original Swift package and package tests
 contracts/                   Versioned event and diagnostic schemas; shared fixtures
-tests/                       Cross-component contract, integration, and browser tests
 evals/                       Agent cases, rubrics, runner, and labeled reports
 .github/workflows/           CI workflows
 ```
@@ -162,4 +240,4 @@ evals/                       Agent cases, rubrics, runner, and labeled reports
 - [Product decisions](docs/product-decisions.md): the choices behind the design and their tradeoffs.
 - [Build plan](docs/build-plan.md): milestones, tests, and evaluation of the Copilot's diagnoses.
 
-There are no setup commands yet because there is no runnable application. The next proposed milestone is the deterministic incident engine and ingestion contract. Implementation starts in a subsequent task after this documentation review.
+The current increment stops at ingestion. The remaining Happy Flow and Diagnostic Flow will be built through separate, reviewable increments; this change does not complete either experience.

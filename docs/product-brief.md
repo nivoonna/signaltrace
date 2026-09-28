@@ -1,6 +1,6 @@
 # SignalTrace product brief
 
-Status: proposed product; documentation only. No customer research, runtime implementation, or measured product results exist in this repository yet. See the [README](../README.md) for current implementation status.
+Status: the first functional increment, event ingestion, is implemented with FastAPI, SQLite, and deterministic tests. The full experiences below remain planned. No customer research, live agent evaluations, or measured product outcomes exist yet. See the [README](../README.md) for the current API contract and implementation status.
 
 ## Problem and intended user
 
